@@ -1,0 +1,43 @@
+
+
+*** Data scraping ***
+
+Take a website to scrape tracking information (https://www.buffaloex.co.za/track.html)
+Provide 100-150 tracking numbers through python looping
+Use headless browser with proper delays to mimic human behavior
+
+
+*** Data extraction and storage ***
+
+Extract useful fields i.e., status, location, timestamp, etc and to store 
+The information with proper heading in excel and csv file initially 
+Upgrade the data storage to SQLite or MongoDB
+
+
+*** Data Analysis ***
+
+organize and clean the tracking information
+perform delivery time analysis, delay patterns, country/route delays, and status frequency
+
+
+*** Machine Learning ***
+Predict delivery delay
+Predict delivery date
+Classify late vs "on time"
+Use models: Linear regression and random forest
+
+
+*** Github ***
+Push your project to github 
+
+
+*** LinkedIn sharing ***
+Share your project to Linkedin after carefully reading the policies
+
+
+Upgradation:
+Use some api to extract data
+Use some proxies to extract data
+Store the data in some online data bases
+
+
