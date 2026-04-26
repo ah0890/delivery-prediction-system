@@ -17,6 +17,30 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 import logging
 
+# Add after imports
+import os
+
+# Check if running in Docker/Render
+IN_DOCKER = os.path.exists('/.dockerenv')
+
+# Update Chrome options in generate_tracking_pdf()
+options = webdriver.ChromeOptions()
+if IN_DOCKER:
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--headless=new")
+    options.add_argument("--window-size=1920,1080")
+    options.binary_location = "/usr/bin/google-chrome"
+else:
+    options.add_argument("--headless=new")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-infobars")
+    options.add_argument("--disable-extensions")
+    
 # ================= CONFIGURATION =================
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Tracking Data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
