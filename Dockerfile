@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies
+# 1. Install system dependencies for Chrome
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Google Chrome (modern GPG method)
+# 2. Install Google Chrome
 RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update \
@@ -37,16 +37,17 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --d
 
 WORKDIR /app
 
-# Install Python dependencies
+# 3. Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# 4. Copy app code
 COPY . .
 
-# Create Chrome temp directory
+# 5. Create temp directory for Chrome
 RUN mkdir -p /tmp/chrome-data
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# ⚠️ THE FIX IS HERE: Use shell syntax so $PORT works
+CMD /bin/sh -c "streamlit run app.py --server.port=$PORT --server.address=0.0.0.0"
