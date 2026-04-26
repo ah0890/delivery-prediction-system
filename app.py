@@ -5,6 +5,7 @@ import re
 import time
 import zipfile
 import io
+import logging
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -15,38 +16,21 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-import logging
 
-# Add after imports
-import os
-
-# Check if running in Docker/Render
-IN_DOCKER = os.path.exists('/.dockerenv')
-
-# Update Chrome options in generate_tracking_pdf()
-options = webdriver.ChromeOptions()
-if IN_DOCKER:
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--headless=new")
-    options.add_argument("--window-size=1920,1080")
-    options.binary_location = "/usr/bin/google-chrome"
-else:
-    options.add_argument("--headless=new")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-infobars")
-    options.add_argument("--disable-extensions")
-    
 # ================= CONFIGURATION =================
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Tracking Data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 DATE_PATTERN = re.compile(r'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}')
+
+# Detect if running in a container (Railway/Render/Docker)
+IN_CONTAINER = (
+    os.path.exists("/.dockerenv") or 
+    os.environ.get("RAILWAY_ENVIRONMENT") == "production" or 
+    os.environ.get("RENDER") == "true" or
+    os.environ.get("DYNO") is not None  # Heroku fallback
+)
 
 # ================= PAGE SETUP =================
 st.set_page_config(
@@ -56,7 +40,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ================= HELPER FUNCTIONS (Reused from your script) =================
+# ================= HELPER FUNCTIONS =================
 
 def parse_tracking_format(tracking_num):
     match = re.match(r"^([A-Za-z]+)(\d+)([A-Za-z]+)$", tracking_num)
@@ -76,18 +60,35 @@ def generate_tracking_range(start_num, end_num):
 def generate_tracking_pdf(tracking_num, output_dir):
     driver = None
     try:
+        # ================= CHROME SETUP (Container-Aware) =================
         options = webdriver.ChromeOptions()
-        options.add_argument("--headless=new")
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--disable-extensions")
         
+        if IN_CONTAINER:
+            # Production/Container settings
+            options.binary_location = "/usr/bin/google-chrome"
+            options.add_argument("--headless=new")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--window-size=1920,1080")
+            options.add_argument("--disable-software-rasterizer")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--disable-infobars")
+            options.add_argument("--disable-setuid-sandbox")
+        else:
+            # Local development settings
+            options.add_argument("--headless=new")
+            options.add_argument("--window-size=1920,1080")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-infobars")
+            options.add_argument("--disable-extensions")
+
         driver = webdriver.Chrome(options=options)
         wait = WebDriverWait(driver, 30)
         
+        # ================= OPEN & INTERACT =================
         driver.get("https://buffaloex.co.za/track.html")
         dropdown = wait.until(EC.presence_of_element_located((By.TAG_NAME, "select")))
         Select(dropdown).select_by_visible_text("Tracking No.")
@@ -100,6 +101,7 @@ def generate_tracking_pdf(tracking_num, output_dir):
         driver.execute_script("arguments[0].click();", search_btn)
         wait.until(EC.visibility_of_element_located((By.ID, "search-result")))
         
+        # ================= SCRAPE & PAIR DATA =================
         result_content = driver.find_element(By.ID, "result-content")
         all_text = result_content.text
         lines = [line.strip() for line in all_text.split('\n') if line.strip()]
@@ -184,16 +186,19 @@ def generate_tracking_pdf(tracking_num, output_dir):
 
 # ================= SIDEBAR =================
 with st.sidebar:
-    st.image("https://buffaloex.co.za/images/logo.png", width=200)
     st.markdown("### 📦 BuffaloEx Tracker")
     st.info("Enter a range of tracking numbers to fetch data and generate PDF reports.")
     st.markdown("---")
     st.markdown("**Tips:**")
     st.markdown("- Tracking numbers must have same prefix/suffix")
     st.markdown("- Example: `BUFZA5120042001YQ` to `BUFZA5120042010YQ`")
-    st.markdown("- Processing ~2 seconds per number")
+    st.markdown("- Processing ~2-3 seconds per number")
+    if IN_CONTAINER:
+        st.warning("🐳 Running in production/container mode")
+    else:
+        st.success("💻 Running in local development mode")
     st.markdown("---")
-    st.caption("Built with ❤️ using Streamlit + Selenium")
+    st.caption("Built with ❤️ using Streamlit + Selenium + ReportLab")
 
 # ================= MAIN APP =================
 st.title("📦 BuffaloEx Batch Tracker")
@@ -257,7 +262,6 @@ if st.button("🚀 Generate Reports", type="primary", disabled=not (start_num an
             # Download Buttons
             col_dl1, col_dl2 = st.columns(2)
             with col_dl1:
-                # Download single PDF (first successful)
                 successful = [r for r in results if r["PDF"]]
                 if successful:
                     with open(successful[0]["Path"], "rb") as f:
@@ -269,7 +273,6 @@ if st.button("🚀 Generate Reports", type="primary", disabled=not (start_num an
                         )
             
             with col_dl2:
-                # Download ZIP of all PDFs
                 if any(r["PDF"] for r in results):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
@@ -287,7 +290,7 @@ if st.button("🚀 Generate Reports", type="primary", disabled=not (start_num an
         # Summary Stats
         success_count = sum(1 for r in results if r["Status"] == "✅ Success")
         st.markdown(f"""
-        <div style='background-color: #f0f2f6; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;'>
+        <div style='background-color: #f0f2f6; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; color: #333;'>
             <b>📊 Session Summary:</b><br>
             ✅ Successful: {success_count}<br>
             ❌ Failed: {len(results) - success_count}<br>
@@ -300,12 +303,12 @@ if st.button("🚀 Generate Reports", type="primary", disabled=not (start_num an
         st.info("💡 Make sure start/end numbers have the same prefix and suffix (e.g., BUFZA...YQ)")
     except Exception as e:
         st.error(f"❌ Unexpected Error: {e}")
-        st.exception(e)  # Show full traceback in dev mode
+        st.exception(e)  # Shows full traceback in dev mode
 
 # Footer
 st.markdown("---")
 st.markdown(
-    "<div style='text-align: center; color: #666; font-size: 0.9rem;'>"
+    f"<div style='text-align: center; color: #666; font-size: 0.9rem;'>"
     "Built with Streamlit • Selenium • ReportLab • "
     f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     "</div>",
